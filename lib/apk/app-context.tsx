@@ -17,8 +17,13 @@ const IMPORTED_KEY = "apk-protector:imported";
 const HISTORY_KEY = "apk-protector:history";
 const GITHUB_KEY = "apk-protector:github";
 const WORKER_KEY = "apk-protector:worker";
-const WORKER_TOKEN_KEY = "apk-protector:worker-token";
+const WORKER_TOKEN_KEY = "apk-protector-worker-token";
 const CURRENT_VERSION = Constants.expoConfig?.version ?? "1.0.0";
+
+async function loadWorkerToken() {
+  if (Platform.OS === "web") return "";
+  return SecureStore.getItemAsync(WORKER_TOKEN_KEY);
+}
 
 type AppContextValue = {
   importedApk: ImportedApk | null;
@@ -57,7 +62,7 @@ export function ApkAppProvider({ children }: { children: ReactNode }) {
   const [updateStatus, setUpdateStatus] = useState("Nenhuma verificação realizada.");
 
   useEffect(() => {
-    Promise.all([AsyncStorage.getItem(IMPORTED_KEY), AsyncStorage.getItem(HISTORY_KEY), AsyncStorage.getItem(GITHUB_KEY), AsyncStorage.getItem(WORKER_KEY), SecureStore.getItemAsync(WORKER_TOKEN_KEY)])
+    Promise.all([AsyncStorage.getItem(IMPORTED_KEY), AsyncStorage.getItem(HISTORY_KEY), AsyncStorage.getItem(GITHUB_KEY), AsyncStorage.getItem(WORKER_KEY), loadWorkerToken()])
       .then(([storedImported, storedHistory, storedGithub, storedWorker, storedToken]) => {
         if (storedImported) setImportedApk(JSON.parse(storedImported) as ImportedApk);
         if (storedHistory) setHistory(JSON.parse(storedHistory) as ProcessingRecord[]);
@@ -189,7 +194,7 @@ export function ApkAppProvider({ children }: { children: ReactNode }) {
   }, [appendHistory]);
 
   const setGithub = useCallback(async (value: GithubConfig) => { const normalized = { owner: value.owner.trim(), repo: value.repo.trim() }; setGithubState(normalized); await AsyncStorage.setItem(GITHUB_KEY, JSON.stringify(normalized)); }, []);
-  const setWorker = useCallback(async (value: WorkerConfig) => { const normalized = { endpoint: value.endpoint.trim().replace(/\/$/, ""), token: value.token?.trim() ?? "" }; setWorkerState(normalized); await AsyncStorage.setItem(WORKER_KEY, JSON.stringify({ endpoint: normalized.endpoint })); if (normalized.token) await SecureStore.setItemAsync(WORKER_TOKEN_KEY, normalized.token); else await SecureStore.deleteItemAsync(WORKER_TOKEN_KEY); }, []);
+  const setWorker = useCallback(async (value: WorkerConfig) => { const normalized = { endpoint: value.endpoint.trim().replace(/\/$/, ""), token: value.token?.trim() ?? "" }; setWorkerState(normalized); await AsyncStorage.setItem(WORKER_KEY, JSON.stringify({ endpoint: normalized.endpoint })); if (Platform.OS !== "web") { if (normalized.token) await SecureStore.setItemAsync(WORKER_TOKEN_KEY, normalized.token); else await SecureStore.deleteItemAsync(WORKER_TOKEN_KEY); } }, []);
   const clearImported = useCallback(async () => { setImportedApk(null); await AsyncStorage.removeItem(IMPORTED_KEY); }, []);
 
   const value = useMemo<AppContextValue>(() => ({ importedApk, history, status, progress, github, worker, latestRelease, updateStatus, importApk, runWorkerOperation, downloadLatest, installArtifact, saveArtifactToDownloads, checkForUpdates, setGithub, setWorker, clearImported }), [importedApk, history, status, progress, github, worker, latestRelease, updateStatus, importApk, runWorkerOperation, downloadLatest, installArtifact, saveArtifactToDownloads, checkForUpdates, setGithub, setWorker, clearImported]);
