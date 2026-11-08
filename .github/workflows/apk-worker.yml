@@ -31,6 +31,8 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools build-tools;35.0.0'
       - name: Install Android Build Tools
         run: yes | sdkmanager --licenses >/dev/null && sdkmanager 'platform-tools' 'build-tools;35.0.0'
       - name: Validate worker script
