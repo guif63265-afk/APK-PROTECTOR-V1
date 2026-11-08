@@ -1,0 +1,52 @@
+name: APK worker validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: 'Operação segura: sign valida e assina; protect/build exigem projeto fonte compatível'
+        required: true
+        default: sign
+        type: choice
+        options: [sign, protect, build]
+      input_path:
+        description: 'Caminho de um APK fornecido pelo job (não commitar segredos ou APKs privados)'
+        required: true
+        type: string
+  push:
+    paths:
+      - 'worker/**'
+      - '.github/workflows/apk-worker.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  tools:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android Build Tools
+        run: yes | sdkmanager --licenses >/dev/null && sdkmanager 'platform-tools' 'build-tools;35.0.0'
+      - name: Validate worker script
+        run: bash -n worker/scripts/process-apk.sh
+      - name: Validate required commands
+        run: command -v apksigner && command -v zipalign && apksigner --version
+      - name: Run requested operation
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          ANDROID_KEYSTORE_PATH: /tmp/release.jks
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          test -f "${{ inputs.input_path }}"
+          test -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}"
+          printf '%s' '${{ secrets.ANDROID_KEYSTORE_BASE64 }}' | base64 --decode > "$ANDROID_KEYSTORE_PATH"
+          chmod 600 "$ANDROID_KEYSTORE_PATH"
+          bash worker/scripts/process-apk.sh "${{ inputs.operation }}" "${{ inputs.input_path }}" /tmp/apk-protector-output.apk

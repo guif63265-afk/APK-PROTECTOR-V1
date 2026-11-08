@@ -1,0 +1,42 @@
+name: Android release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec tsc --noEmit --pretty false
+      - name: Build Android APK with EAS
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: npx eas-cli@latest build --platform android --profile production --non-interactive --wait --json > eas-build.json
+      - name: Download EAS artifact
+        run: |
+          APK_URL=$(node -e "const fs=require('fs'); const data=JSON.parse(fs.readFileSync('eas-build.json','utf8')); const item=Array.isArray(data)?data[0]:data; console.log(item.artifacts?.buildUrl || item.artifactUrl || '')")
+          test -n "$APK_URL"
+          curl -fL "$APK_URL" -o APK-PROTECTOR-V1.apk
+          sha256sum APK-PROTECTOR-V1.apk > APK-PROTECTOR-V1.sha256
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          SHA256=$(cut -d' ' -f1 APK-PROTECTOR-V1.sha256)
+          gh release create "$GITHUB_REF_NAME" APK-PROTECTOR-V1.apk APK-PROTECTOR-V1.sha256 --title "APK PROTECTOR V1 $VERSION" --notes "APK_SHA256=$SHA256"

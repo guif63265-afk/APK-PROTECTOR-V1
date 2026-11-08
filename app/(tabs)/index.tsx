@@ -1,48 +1,44 @@
-import { ScrollView, Text, View, TouchableOpacity } from "react-native";
-
+import { useMemo, useState } from "react";
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { ScreenContainer } from "@/components/screen-container";
+import { ActionButton, COLORS, EmptyState, KeyValue, Panel, SectionTitle, StatusBadge } from "@/components/apk-ui";
+import { formatBytes, shortHash } from "@/lib/apk/analyzer";
+import { useApkApp } from "@/lib/apk/app-context";
+import type { WorkerOperation } from "@/lib/apk/worker";
 
-/**
- * Home Screen - NativeWind Example
- *
- * This template uses NativeWind (Tailwind CSS for React Native).
- * You can use familiar Tailwind classes directly in className props.
- *
- * Key patterns:
- * - Use `className` instead of `style` for most styling
- * - Theme colors: use tokens directly (bg-background, text-foreground, bg-primary, etc.); no dark: prefix needed
- * - Responsive: standard Tailwind breakpoints work on web
- * - Custom colors defined in tailwind.config.js
- */
 export default function HomeScreen() {
-  return (
-    <ScreenContainer className="p-6">
-      <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
-        <View className="flex-1 gap-8">
-          {/* Hero Section */}
-          <View className="items-center gap-2">
-            <Text className="text-4xl font-bold text-foreground">Welcome</Text>
-            <Text className="text-base text-muted text-center">
-              Edit app/(tabs)/index.tsx to get started
-            </Text>
-          </View>
+  const { importedApk, history, status, progress, importApk, runWorkerOperation, saveArtifactToDownloads, installArtifact } = useApkApp();
+  const [notice, setNotice] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [confirmInstall, setConfirmInstall] = useState(false);
+  const latestArtifact = useMemo(() => history.find((item) => item.artifactUri)?.artifactUri, [history]);
 
-          {/* Example Card */}
-          <View className="w-full max-w-sm self-center bg-surface rounded-2xl p-6 shadow-sm border border-border">
-            <Text className="text-lg font-semibold text-foreground mb-2">NativeWind Ready</Text>
-            <Text className="text-sm text-muted leading-relaxed">
-              Use Tailwind CSS classes directly in your React Native components.
-            </Text>
-          </View>
+  const run = async (action: () => Promise<unknown>, success: string) => {
+    setBusy(true); setNotice(null);
+    try { await action(); setNotice(success); } catch (error) { setNotice(error instanceof Error ? error.message : "Operação não concluída."); } finally { setBusy(false); }
+  };
+  const handleInstall = () => { if (!latestArtifact) { setNotice("Nenhum artefato verificado está disponível para instalar."); return; } setConfirmInstall(true); };
+  const workerAction = (operation: WorkerOperation, label: string) => void run(() => runWorkerOperation(operation), label);
 
-          {/* Example Button */}
-          <View className="items-center">
-            <TouchableOpacity className="bg-primary px-6 py-3 rounded-full active:opacity-80">
-              <Text className="text-background font-semibold">Get Started</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </ScrollView>
-    </ScreenContainer>
-  );
+  return <ScreenContainer containerClassName="bg-background" safeAreaClassName="bg-background" edges={["top", "left", "right"]}>
+    <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <View style={styles.brandRow}><View style={styles.brandMark}><Text style={styles.brandMarkText}>AP</Text></View><View><Text style={styles.brand}>APK PROTECTOR</Text><Text style={styles.version}>V1 / RELEASE WORKBENCH</Text></View><View style={styles.live}><View style={styles.liveDot} /><Text style={styles.liveText}>LOCAL</Text></View></View>
+      <SectionTitle eyebrow="PAINEL OPERACIONAL" title="Proteja com evidência." detail="Importe, valide e envie o APK somente para operações configuradas." />
+      <Panel style={styles.statusPanel}><View style={styles.panelHeader}><Text style={styles.panelLabel}>ESTADO DO PIPELINE</Text><StatusBadge status={status} label={status === "idle" ? "AGUARDANDO" : status === "blocked" ? "BLOQUEADO" : undefined} /></View><View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${Math.round(progress * 100)}%` }]} /></View><Text style={styles.progressText}>{status === "running" ? `${Math.round(progress * 100)}% em processamento` : status === "blocked" ? "Worker nativo não configurado ou operação recusada" : status === "success" ? "Última operação concluída" : "Nenhuma operação em execução"}</Text></Panel>
+      {notice ? <View style={styles.notice}><Text style={styles.noticeMark}>!</Text><Text style={styles.noticeText}>{notice}</Text></View> : null}
+      {!importedApk ? <Panel><EmptyState title="Nenhum APK importado" detail="Selecione um APK para calcular SHA-256, ler sua estrutura e identificar problemas sem executá-lo." /><ActionButton label="IMPORTAR APK" icon="+" loading={busy} onPress={() => void run(importApk, "APK importado e analisado.")} /></Panel> : <>
+        <Panel><View style={styles.panelHeader}><View style={{ flex: 1 }}><Text style={styles.fileName} numberOfLines={1}>{importedApk.name}</Text><Text style={styles.fileMeta}>{formatBytes(importedApk.size)} · {new Date(importedApk.importedAt).toLocaleString()}</Text></View><StatusBadge status={importedApk.analysis.errors.length ? "error" : importedApk.analysis.warnings.length ? "warning" : "success"} label={importedApk.analysis.errors.length ? "PROBLEMAS" : importedApk.analysis.warnings.length ? "ATENÇÃO" : "ÍNTEGRO"} /></View><KeyValue label="SHA-256" value={shortHash(importedApk.sha256)} mono /><KeyValue label="Entradas ZIP" value={String(importedApk.analysis.entryCount)} /><KeyValue label="Arquivos DEX" value={String(importedApk.analysis.dexCount)} /><KeyValue label="Assinatura detectada" value={importedApk.analysis.signature} /></Panel>
+        <View style={styles.actionGrid}><ActionButton label="IMPORTAR OUTRO" tone="secondary" onPress={() => void run(importApk, "Novo APK importado e analisado.")} /><ActionButton label="PROTEGER APK" icon="›" loading={busy} onPress={() => workerAction("protect", "Job de proteção enviado ao worker.")} /><ActionButton label="ASSINAR APK" tone="secondary" loading={busy} onPress={() => workerAction("sign", "Job de assinatura enviado ao worker.")} /><ActionButton label="COMPILAR APK" tone="secondary" loading={busy} onPress={() => workerAction("build", "Job de compilação enviado ao worker.")} /></View>
+        <View style={styles.actionGrid}><ActionButton label="SALVAR EM DOWNLOADS" tone="secondary" disabled={!latestArtifact || busy} onPress={() => void run(() => saveArtifactToDownloads(latestArtifact), "Artefato salvo na pasta escolhida.")} /><ActionButton label="INSTALAR APK" tone="danger" disabled={!latestArtifact || busy} onPress={handleInstall} /></View>
+        <Panel><Text style={styles.panelLabel}>DIAGNÓSTICO DA ANÁLISE</Text>{importedApk.analysis.errors.map((item) => <Text key={item} style={styles.errorLine}>× {item}</Text>)}{importedApk.analysis.warnings.map((item) => <Text key={item} style={styles.warningLine}>! {item}</Text>)}{!importedApk.analysis.errors.length && !importedApk.analysis.warnings.length ? <Text style={styles.successLine}>✓ Nenhum problema estrutural encontrado pelo analisador local.</Text> : null}<Text style={styles.disclaimer}>A análise local não substitui a validação criptográfica do apksigner.</Text></Panel>
+      </>}
+      {history.length ? <Panel><View style={styles.panelHeader}><Text style={styles.panelLabel}>HISTÓRICO RECENTE</Text><Text style={styles.historyCount}>{history.length}/30</Text></View>{history.slice(0, 5).map((item) => <View key={item.id} style={styles.historyRow}><StatusBadge status={item.status} label={item.operation.toUpperCase()} /><View style={{ flex: 1 }}><Text style={styles.historyLabel}>{item.label}</Text><Text style={styles.historyMessage} numberOfLines={1}>{item.message}</Text></View><Text style={styles.historyDate}>{new Date(item.createdAt).toLocaleDateString()}</Text></View>)}</Panel> : null}
+      {status === "running" ? <ActivityIndicator color={COLORS.red} /> : null}
+    </ScrollView>
+    <Modal visible={confirmInstall} transparent animationType="fade" onRequestClose={() => setConfirmInstall(false)}><View style={styles.modalBackdrop}><View style={styles.modalCard}><Text style={styles.modalTitle}>ABRIR INSTALADOR</Text><Text style={styles.modalText}>O Android exibirá a confirmação oficial. O APK não será instalado silenciosamente.</Text><View style={styles.modalActions}><Pressable style={styles.modalSecondary} onPress={() => setConfirmInstall(false)}><Text style={styles.modalSecondaryText}>CANCELAR</Text></Pressable><Pressable style={styles.modalPrimary} onPress={() => { setConfirmInstall(false); void run(() => installArtifact(latestArtifact), "Instalador oficial aberto."); }}><Text style={styles.modalPrimaryText}>CONTINUAR</Text></Pressable></View></View></View></Modal>
+  </ScreenContainer>;
 }
+
+const styles = StyleSheet.create({ content: { padding: 20, gap: 16, paddingBottom: 32 }, brandRow: { flexDirection: "row", alignItems: "center", gap: 11, marginBottom: 7 }, brandMark: { width: 42, height: 42, borderRadius: 12, backgroundColor: COLORS.red, alignItems: "center", justifyContent: "center" }, brandMarkText: { color: COLORS.text, fontWeight: "900", fontSize: 16, letterSpacing: -1 }, brand: { color: COLORS.text, fontWeight: "900", fontSize: 14, letterSpacing: 1.1 }, version: { color: COLORS.muted, fontSize: 9, letterSpacing: 1.2, marginTop: 3 }, live: { marginLeft: "auto", flexDirection: "row", alignItems: "center", gap: 5, borderColor: COLORS.border, borderWidth: 1, borderRadius: 99, paddingHorizontal: 8, paddingVertical: 5 }, liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.green }, liveText: { color: COLORS.muted, fontSize: 9, fontWeight: "800" }, statusPanel: { gap: 13 }, panelHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 10 }, panelLabel: { color: COLORS.muted, fontSize: 10, fontWeight: "800", letterSpacing: 1.2 }, progressTrack: { height: 8, borderRadius: 4, backgroundColor: COLORS.surface2, overflow: "hidden" }, progressFill: { height: "100%", backgroundColor: COLORS.red, borderRadius: 4 }, progressText: { color: COLORS.muted, fontSize: 12 }, notice: { flexDirection: "row", alignItems: "flex-start", gap: 9, borderColor: COLORS.red, borderWidth: 1, borderRadius: 12, padding: 12, backgroundColor: COLORS.redSoft }, noticeMark: { color: COLORS.red, fontWeight: "900", fontSize: 16 }, noticeText: { color: COLORS.text, fontSize: 12, lineHeight: 18, flex: 1 }, fileName: { color: COLORS.text, fontSize: 16, fontWeight: "800" }, fileMeta: { color: COLORS.muted, fontSize: 12, marginTop: 4 }, actionGrid: { gap: 10 }, errorLine: { color: COLORS.red, fontSize: 12, lineHeight: 18 }, warningLine: { color: COLORS.amber, fontSize: 12, lineHeight: 18 }, successLine: { color: COLORS.green, fontSize: 12, lineHeight: 18 }, disclaimer: { color: COLORS.muted, fontSize: 11, lineHeight: 16, marginTop: 4 }, historyCount: { color: COLORS.muted, fontSize: 11 }, historyRow: { flexDirection: "row", alignItems: "center", gap: 9, borderTopColor: COLORS.border, borderTopWidth: 1, paddingTop: 10 }, historyLabel: { color: COLORS.text, fontSize: 12, fontWeight: "800" }, historyMessage: { color: COLORS.muted, fontSize: 11, marginTop: 2 }, historyDate: { color: COLORS.muted, fontSize: 10 },
+  modalBackdrop: { flex: 1, backgroundColor: "#000000B8", justifyContent: "center", padding: 22 }, modalCard: { backgroundColor: COLORS.surface, borderColor: COLORS.border, borderWidth: 1, borderRadius: 16, padding: 20, gap: 12 }, modalTitle: { color: COLORS.text, fontSize: 13, fontWeight: "900", letterSpacing: 1.1 }, modalText: { color: COLORS.muted, fontSize: 13, lineHeight: 19 }, modalActions: { flexDirection: "row", gap: 10, justifyContent: "flex-end" }, modalSecondary: { borderColor: COLORS.border, borderWidth: 1, borderRadius: 10, paddingHorizontal: 13, paddingVertical: 11 }, modalSecondaryText: { color: COLORS.muted, fontSize: 11, fontWeight: "800" }, modalPrimary: { backgroundColor: COLORS.red, borderRadius: 10, paddingHorizontal: 13, paddingVertical: 11 }, modalPrimaryText: { color: COLORS.text, fontSize: 11, fontWeight: "800" },
+});
