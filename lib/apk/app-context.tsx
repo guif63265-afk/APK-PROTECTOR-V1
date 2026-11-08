@@ -1,11 +1,10 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as DocumentPicker from "expo-document-picker";
 import Constants from "expo-constants";
-import * as FileSystem from "expo-file-system/legacy";
+import { Directory, File, Paths } from "expo-file-system";
 import * as IntentLauncher from "expo-intent-launcher";
 import * as Notifications from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
-import { StorageAccessFramework } from "expo-file-system/legacy";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Platform } from "react-native";
 import { analyzeApkAsset } from "./analyzer";
@@ -157,13 +156,11 @@ export function ApkAppProvider({ children }: { children: ReactNode }) {
     if (!asset) throw new Error("A Release não possui um APK anexado.");
     const expected = releaseSha256(latestRelease);
     if (!expected) throw new Error("A Release não informa SHA-256; o download não será considerado verificado.");
-    if (!FileSystem.cacheDirectory) throw new Error("O diretório de cache não está disponível neste dispositivo.");
-    const target = `${FileSystem.cacheDirectory}${asset.name}`;
+    const target = new File(Paths.cache, asset.name);
     try {
-      const download = await FileSystem.downloadAsync(asset.browser_download_url, target);
-      const info = await FileSystem.getInfoAsync(download.uri);
-      if (!info.exists) throw new Error("O APK baixado não foi encontrado no armazenamento local.");
-      const picked = await analyzeApkAsset({ name: asset.name, uri: download.uri, size: info.size, lastModified: Date.now() });
+      const download = await File.downloadFileAsync(asset.browser_download_url, target, { idempotent: true });
+      if (!download.exists) throw new Error("O APK baixado não foi encontrado no armazenamento local.");
+      const picked = await analyzeApkAsset({ name: asset.name, uri: download.uri, size: download.size, lastModified: download.lastModified ?? Date.now() });
       if (picked.sha256.toLowerCase() !== expected.toLowerCase()) throw new Error("SHA-256 do APK baixado não corresponde ao manifesto da Release.");
       await appendHistory(record("update", "success", "Download de atualização", `v${releaseVersion(latestRelease)} verificada por SHA-256.`, { sha256: picked.sha256, artifactUri: download.uri }));
       setUpdateStatus(`v${releaseVersion(latestRelease)} baixada e verificada.`);
@@ -177,20 +174,18 @@ export function ApkAppProvider({ children }: { children: ReactNode }) {
   const installArtifact = useCallback(async (uri?: string) => {
     if (Platform.OS !== "android") throw new Error("A instalação oficial está disponível somente no Android.");
     if (!uri) throw new Error("Nenhum artefato verificado está disponível para instalar.");
-    const contentUri = await FileSystem.getContentUriAsync(uri);
-    await IntentLauncher.startActivityAsync("android.intent.action.VIEW", { data: contentUri, type: "application/vnd.android.package-archive", flags: 1 });
+    await IntentLauncher.startActivityAsync("android.intent.action.VIEW", { data: uri, type: "application/vnd.android.package-archive", flags: 1 });
     await appendHistory(record("install", "success", "Instalação", "Instalador oficial do Android aberto após autorização.", { artifactUri: uri }));
   }, [appendHistory]);
 
   const saveArtifactToDownloads = useCallback(async (uri?: string, name = "apk-protector-release.apk") => {
     if (Platform.OS !== "android") throw new Error("Salvar em Downloads é suportado somente no Android.");
     if (!uri) throw new Error("Nenhum artefato disponível para exportação.");
-    const permission = await StorageAccessFramework.requestDirectoryPermissionsAsync();
-    if (!permission.granted) throw new Error("Permissão para escolher a pasta de destino foi recusada.");
-    const target = await StorageAccessFramework.createFileAsync(permission.directoryUri, name, "application/vnd.android.package-archive");
-    await FileSystem.copyAsync({ from: uri, to: target });
-    await appendHistory(record("download", "success", "Exportação", "APK salvo na pasta escolhida pelo usuário.", { artifactUri: target }));
-    return target;
+    const directory = await Directory.pickDirectoryAsync();
+    const target = directory.createFile(name, "application/vnd.android.package-archive");
+    await new File(uri).copy(target);
+    await appendHistory(record("download", "success", "Exportação", "APK salvo na pasta escolhida pelo usuário.", { artifactUri: target.uri }));
+    return target.uri;
   }, [appendHistory]);
 
   const setGithub = useCallback(async (value: GithubConfig) => { const normalized = { owner: value.owner.trim(), repo: value.repo.trim() }; setGithubState(normalized); await AsyncStorage.setItem(GITHUB_KEY, JSON.stringify(normalized)); }, []);

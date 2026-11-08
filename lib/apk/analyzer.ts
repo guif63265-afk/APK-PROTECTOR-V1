@@ -1,6 +1,6 @@
 import { unzipSync } from "fflate";
 import { sha256 } from "js-sha256";
-import * as FileSystem from "expo-file-system/legacy";
+import { File } from "expo-file-system";
 import type { DocumentPickerAsset } from "expo-document-picker";
 import type { ApkAnalysis } from "./types";
 export { formatBytes, shortHash } from "./presentation";
@@ -8,31 +8,12 @@ import { formatBytes, shortHash } from "./presentation";
 
 export const MAX_APK_SIZE_BYTES = 250 * 1024 * 1024;
 
-function decodeBase64(value: string): Uint8Array {
-  if (typeof atob === "function") {
-    const binary = atob(value);
-    const result = new Uint8Array(binary.length);
-    for (let index = 0; index < binary.length; index += 1) {
-      result[index] = binary.charCodeAt(index);
-    }
-    return result;
-  }
-  const BufferImpl = (globalThis as Record<string, unknown>).Buffer as
-    | { from(input: string, encoding: string): Uint8Array }
-    | undefined;
-  if (!BufferImpl) throw new Error("Este dispositivo não disponibiliza um decodificador base64.");
-  return new Uint8Array(BufferImpl.from(value, "base64"));
-}
-
 async function readAssetBytes(asset: DocumentPickerAsset): Promise<Uint8Array> {
   if (asset.file && typeof asset.file.arrayBuffer === "function") {
     return new Uint8Array(await asset.file.arrayBuffer());
   }
   if (!asset.uri) throw new Error("O seletor não retornou uma URI de arquivo válida.");
-  const base64 = await FileSystem.readAsStringAsync(asset.uri, {
-    encoding: FileSystem.EncodingType.Base64,
-  });
-  return decodeBase64(base64);
+  return new File(asset.uri).bytes();
 }
 
 function hasMagic(bytes: Uint8Array, magic: string): boolean {
@@ -58,8 +39,8 @@ export async function analyzeApkAsset(asset: DocumentPickerAsset): Promise<{
   sha256: string;
   analysis: ApkAnalysis;
 }> {
-  const info = await FileSystem.getInfoAsync(asset.uri);
-  const size = asset.size ?? (info.exists && !info.isDirectory ? info.size ?? 0 : 0);
+  const file = new File(asset.uri);
+  const size = asset.size ?? (file.exists ? file.size : 0);
   if (size > MAX_APK_SIZE_BYTES) {
     throw new Error(`O APK excede o limite seguro de ${Math.round(MAX_APK_SIZE_BYTES / 1024 / 1024)} MB.`);
   }

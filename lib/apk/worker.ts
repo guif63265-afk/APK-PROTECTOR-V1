@@ -1,5 +1,5 @@
 import { Platform } from "react-native";
-import * as FileSystem from "expo-file-system/legacy";
+import { File, Paths, UploadType } from "expo-file-system";
 import type { WorkerConfig } from "./types";
 
 export type WorkerOperation = "protect" | "sign" | "build";
@@ -26,10 +26,10 @@ export async function submitWorkerJob(
   const endpoint = config.endpoint.trim().replace(/\/$/, "");
   if (!endpoint) throw new Error("Worker não configurado. Informe um endpoint nativo nas Configurações.");
 
-  const response = await FileSystem.uploadAsync(`${endpoint}/api/v1/jobs`, fileUri, {
+  const response = await new File(fileUri).upload(`${endpoint}/api/v1/jobs`, {
     fieldName: "apk",
     httpMethod: "POST",
-    uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+    uploadType: UploadType.MULTIPART,
     parameters: { operation, sha256 },
     headers: {
       Accept: "application/json",
@@ -49,9 +49,8 @@ export async function submitWorkerJob(
     if (current.status === "error") throw new Error(current.message ?? "O worker recusou o job.");
     if (current.status === "success") {
       if (!current.artifactUrl) return current;
-      if (!FileSystem.cacheDirectory) throw new Error("Cache local indisponível para receber o artefato do worker.");
       const artifactUrl = current.artifactUrl.startsWith("http") ? current.artifactUrl : `${endpoint}${current.artifactUrl}`;
-      const download = await FileSystem.downloadAsync(artifactUrl, `${FileSystem.cacheDirectory}worker-${body.jobId}.apk`, { headers: config.token ? { Authorization: `Bearer ${config.token}` } : undefined });
+      const download = await File.downloadFileAsync(artifactUrl, new File(Paths.cache, `worker-${body.jobId}.apk`), { idempotent: true, headers: config.token ? { Authorization: `Bearer ${config.token}` } : undefined });
       return { ...current, artifactUrl: download.uri };
     }
   }
