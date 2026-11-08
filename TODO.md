@@ -41,3 +41,12 @@
 - [ ] O repositório contém workflow de checagem TypeScript/testes, build Android e publicação em Release usando Secrets.
 - [ ] O workflow do worker executa somente em ambiente com Android SDK/Build Tools e falha explicitamente quando as ferramentas não estiverem configuradas.
 - [ ] O APK de release, o repositório e o link direto só são marcados como entregues depois de confirmação real do build/publicação.
+
+## Evidência atual
+
+- [x] TypeScript, testes determinísticos e sintaxe do worker passam localmente; o Preview mobile foi verificado em viewport 375×812.
+- [x] Repositório público criado em `guif63265-afk/APK-PROTECTOR-V1`.
+- [x] Execução do worker CI concluída com sucesso no GitHub Actions: https://github.com/guif63265-afk/APK-PROTECTOR-V1/actions/runs/42481008568
+- [x] Workflow de qualidade adicionado para checar TypeScript, Vitest e shell a cada push.
+- [ ] Build EAS e GitHub Release ainda dependem do Secret `EXPO_TOKEN` e de um projeto EAS vinculado.
+- [ ] Assinatura de APK depende de uma keystore do proprietário e dos Secrets de assinatura; nenhuma chave privada foi criada ou publicada automaticamente.
