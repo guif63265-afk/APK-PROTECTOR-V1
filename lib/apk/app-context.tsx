@@ -51,7 +51,7 @@ export function ApkAppProvider({ children }: { children: ReactNode }) {
   const [history, setHistory] = useState<ProcessingRecord[]>([]);
   const [status, setStatus] = useState<OperationStatus>("idle");
   const [progress, setProgress] = useState(0);
-  const [github, setGithubState] = useState<GithubConfig>({ owner: "", repo: "APK-PROTECTOR-V1" });
+  const [github, setGithubState] = useState<GithubConfig>({ owner: "guif63265-afk", repo: "APK-PROTECTOR-V1" });
   const [worker, setWorkerState] = useState<WorkerConfig>({ endpoint: "", token: "" });
   const [latestRelease, setLatestRelease] = useState<GithubRelease | null>(null);
   const [updateStatus, setUpdateStatus] = useState("Nenhuma verificação realizada.");
