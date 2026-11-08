@@ -25,21 +25,47 @@ export async function submitWorkerJob(
   }
   const endpoint = config.endpoint.trim().replace(/\/$/, "");
   if (!endpoint) throw new Error("Worker não configurado. Informe um endpoint nativo nas Configurações.");
-
-  const response = await new File(fileUri).upload(`${endpoint}/api/v1/jobs`, {
-    fieldName: "apk",
-    httpMethod: "POST",
-    uploadType: UploadType.MULTIPART,
-    parameters: { operation, sha256 },
-    headers: {
-      Accept: "application/json",
-      ...(config.token ? { Authorization: `Bearer ${config.token}` } : {}),
-    },
-  });
-  if (response.status < 200 || response.status >= 300) {
-    throw new Error(`Worker respondeu com HTTP ${response.status}.`);
+  try {
+    const parsed = new URL(endpoint);
+    if (parsed.protocol !== "https:" && parsed.hostname !== "localhost" && parsed.hostname !== "127.0.0.1") {
+      throw new Error("O endpoint do Worker deve usar HTTPS.");
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("HTTPS")) throw error;
+    throw new Error("Endpoint do Worker inválido. Use uma URL HTTPS completa.");
   }
-  const body = JSON.parse(response.body) as WorkerJobResponse;
+  if (!config.token?.trim()) throw new Error("Worker configurado, mas o token obrigatório não foi informado nas Configurações.");
+
+  let healthResponse: Response;
+  try {
+    healthResponse = await fetch(`${endpoint}/health`, { headers: { Accept: "application/json" } });
+  } catch {
+    throw new Error("Worker indisponível: não foi possível conectar ao endpoint configurado.");
+  }
+  if (!healthResponse.ok) throw new Error(`Worker indisponível: endpoint respondeu HTTP ${healthResponse.status}.`);
+
+  let response: Awaited<ReturnType<File["upload"]>>;
+  try {
+    response = await new File(fileUri).upload(`${endpoint}/api/v1/jobs`, {
+      fieldName: "apk",
+      httpMethod: "POST",
+      uploadType: UploadType.MULTIPART,
+      parameters: { operation, sha256 },
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${config.token}`,
+      },
+    });
+  } catch {
+    throw new Error("Worker indisponível: falha no upload do APK para o endpoint configurado.");
+  }
+  if (response.status < 200 || response.status >= 300) {
+    let detail = "";
+    try { detail = (JSON.parse(response.body) as { message?: string }).message ?? ""; } catch { /* resposta não JSON */ }
+    throw new Error(detail || `Worker respondeu com HTTP ${response.status}.`);
+  }
+  let body: WorkerJobResponse;
+  try { body = JSON.parse(response.body) as WorkerJobResponse; } catch { throw new Error("Worker retornou uma resposta inválida ao criar o job."); }
   if (!body.jobId) throw new Error("O worker não retornou um jobId válido.");
   for (let attempt = 0; attempt < 60; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 2000));

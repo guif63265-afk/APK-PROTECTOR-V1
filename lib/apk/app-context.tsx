@@ -18,6 +18,9 @@ const GITHUB_KEY = "apk-protector:github";
 const WORKER_KEY = "apk-protector:worker";
 const WORKER_TOKEN_KEY = "apk-protector-worker-token";
 const CURRENT_VERSION = Constants.expoConfig?.version ?? "1.0.0";
+const DEFAULT_WORKER_ENDPOINT = typeof Constants.expoConfig?.extra?.workerUrl === "string"
+  ? Constants.expoConfig.extra.workerUrl.replace(/\/$/, "")
+  : "";
 
 async function loadWorkerToken() {
   if (Platform.OS === "web") return "";
@@ -56,7 +59,7 @@ export function ApkAppProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<OperationStatus>("idle");
   const [progress, setProgress] = useState(0);
   const [github, setGithubState] = useState<GithubConfig>({ owner: "guif63265-afk", repo: "APK-PROTECTOR-V1" });
-  const [worker, setWorkerState] = useState<WorkerConfig>({ endpoint: "", token: "" });
+  const [worker, setWorkerState] = useState<WorkerConfig>({ endpoint: DEFAULT_WORKER_ENDPOINT, token: "" });
   const [latestRelease, setLatestRelease] = useState<GithubRelease | null>(null);
   const [updateStatus, setUpdateStatus] = useState("Nenhuma verificação realizada.");
 
@@ -66,7 +69,7 @@ export function ApkAppProvider({ children }: { children: ReactNode }) {
         if (storedImported) setImportedApk(JSON.parse(storedImported) as ImportedApk);
         if (storedHistory) setHistory(JSON.parse(storedHistory) as ProcessingRecord[]);
         if (storedGithub) setGithubState(JSON.parse(storedGithub) as GithubConfig);
-        if (storedWorker) setWorkerState({ ...(JSON.parse(storedWorker) as WorkerConfig), token: storedToken ?? "" });
+        if (storedWorker) setWorkerState({ endpoint: (JSON.parse(storedWorker) as WorkerConfig).endpoint || DEFAULT_WORKER_ENDPOINT, token: storedToken ?? "" });
       })
       .catch((error) => console.warn("Falha ao restaurar o histórico local", error));
   }, []);
@@ -112,8 +115,14 @@ export function ApkAppProvider({ children }: { children: ReactNode }) {
     setStatus("running");
     setProgress(0.15);
     try {
-      const response = await submitWorkerJob(worker, operation, importedApk.uri, importedApk.sha256);
-      await appendHistory(record(operation, response.status === "success" ? "success" : "running", operation === "protect" ? "Proteção/ofuscação" : operation === "sign" ? "Assinatura" : "Recompilação", response.message ?? `Job ${response.jobId} enviado ao worker.`, { jobId: response.jobId, sha256: response.sha256 ?? importedApk.sha256, artifactUri: response.artifactUrl }));
+      const previousArtifact = history.find((item) => ["protect", "sign", "build"].includes(item.operation) && item.status === "success" && item.sourceSha256 === importedApk.sha256 && item.artifactUri);
+      const sourceUri = previousArtifact?.artifactUri ?? importedApk.uri;
+      const sourceSha256 = previousArtifact?.sha256 ?? importedApk.sha256;
+      const response = await submitWorkerJob(worker, operation, sourceUri, sourceSha256);
+      if (response.status !== "success" || !response.artifactUrl || !response.sha256) {
+        throw new Error(response.message ?? "O Worker não entregou um artefato verificável.");
+      }
+      await appendHistory(record(operation, "success", operation === "protect" ? "Proteção/ofuscação" : operation === "sign" ? "Assinatura" : "Recompilação", response.message ?? `Job ${response.jobId} concluído pelo worker.`, { jobId: response.jobId, sha256: response.sha256, sourceSha256: importedApk.sha256, artifactUri: response.artifactUrl }));
       setProgress(response.status === "success" ? 1 : 0.45);
       setStatus(response.status === "success" ? "success" : "running");
     } catch (error) {
@@ -123,7 +132,7 @@ export function ApkAppProvider({ children }: { children: ReactNode }) {
       setProgress(0);
       throw error;
     }
-  }, [appendHistory, importedApk, worker]);
+  }, [appendHistory, history, importedApk, worker]);
 
   const checkForUpdates = useCallback(async () => {
     setUpdateStatus("Consultando GitHub Releases…");

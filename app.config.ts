@@ -57,6 +57,7 @@ const publicRuntime = {
     process.env.EXPO_PUBLIC_APP_ID ??
     "",
   apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL ?? "",
+  workerUrl: process.env.EXPO_PUBLIC_WORKER_URL ?? "",
 };
 
 const config: ExpoConfig = {

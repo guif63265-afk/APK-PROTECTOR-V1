@@ -31,6 +31,7 @@ export type ProcessingRecord = {
   message: string;
   createdAt: string;
   sha256?: string;
+  sourceSha256?: string;
   artifactUri?: string;
   jobId?: string;
 };

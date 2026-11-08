@@ -8,15 +8,15 @@ A tela Painel permite importar e analisar um APK, mostrando tamanho, hash, manif
 
 ## Worker nativo
 
-O diretório `worker/` contém um serviço HTTP autenticado e o script `worker/scripts/process-apk.sh`. O worker precisa rodar em ambiente com Java 17, Android SDK/Build Tools 35.0.0, `apksigner` e `zipalign`. Ele aceita jobs multipart e mantém o processamento isolado por diretório temporário.
+O diretório `worker/` contém um serviço HTTP autenticado e o script `worker/scripts/process-apk.sh`. O worker precisa rodar em ambiente com Java 17, Python 3, Apktool, Android SDK/Build Tools 35.0.0, `apksigner` e `zipalign`. Ele aceita jobs multipart e mantém o processamento isolado por diretório temporário.
 
-A operação `sign` é real: alinha, assina e valida o APK com `apksigner`. As operações `protect` e `build` recusam APKs já compilados, porque ofuscação R8 e recompilação confiáveis exigem o projeto fonte Gradle e podem quebrar componentes. O worker não mascara essa limitação como sucesso. Para proteção real, use um projeto fonte com `minifyEnabled`/R8 e execute o pipeline de build no CI com uma keystore configurada.
+A operação `sign` alinha, assina e valida o APK com `apksigner`. `protect` usa Apktool para decodificar os DEX em Smali, renomear classes pertencentes ao package da aplicação, recompilar, alinhar, assinar e validar. `build` recompila o artefato recebido, assina e valida. Reflexão dinâmica ou componentes que dependam de nomes de classe podem exigir regras específicas; qualquer falha do Apktool ou da assinatura retorna erro real e nunca sucesso simulado.
 
 Para iniciar o worker:
 
 ```bash
 export WORKER_TOKEN='um-token-longo-e-privado'
-export ANDROID_KEYSTORE_PATH='/secrets/release.jks'
+export ANDROID_KEYSTORE_BASE64='base64-da-keystore'
 export ANDROID_KEY_ALIAS='release'
 export ANDROID_KEYSTORE_PASSWORD='...'
 export ANDROID_KEY_PASSWORD='...'
@@ -24,6 +24,7 @@ pnpm exec tsx worker/src/index.ts
 ```
 
 O endpoint de saúde é `GET /health`. O app usa `POST /api/v1/jobs` com Bearer token e consulta `GET /api/v1/jobs/:jobId` até obter o artefato.
+Defina `EXPO_PUBLIC_WORKER_URL` no ambiente do build para preencher o endpoint padrão; o `WORKER_TOKEN` deve ser informado apenas na tela Configurações do Android e fica no SecureStore.
 
 ## GitHub Actions
 
